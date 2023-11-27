@@ -1,21 +1,21 @@
-0000        Assign      START       0                       
-0000        FIRST       +LDB        #RETADR     691002C6    
+0000        BASHRC      START       0                       
+0000        FIRST       +LDB        #RETADR     6910083E    
                         BASE        RETADR                  
-0004                    STL         RETADR      1722BF      
-0007                    LDA         @RETADR     0222BC      
-000A        BADR        RESB        700                     
-02C6        RETADR      RESB        1                       
-02C7                    CLEAR       A           B400        
-02C9        VDEV        BYTE        X'F1'       F1          
-02CA                    LDX         #0          050000      
-02CD                    LDA         #5          010005      
-02D0        WDEV        BYTE        X'000001'   000001      
-02D3        WLOOP       TD          WDEV        E32FFA      
-02D6                    JEQ         WLOOP       332FFA      
-02D9                    LDCH        RETADR,X    53AFEA      
-02DC                    WD          VDEV        DF2FEA      
-02DF                    +LDA        =X'000007'  031002E3    
+0004                    STL         RETADR      174000      
+0007                    LDA         @RETADR     024000      
+000A        BADR        RESB        2100                    
+083E        RETADR      RESB        3                       
+0841                    CLEAR       A           B400        
+0843                    LDX         #0          050000      
+0846                    LDA         #5          010005      
+0849        WLOOP       TD          =X'000001'  E32009      
+084C                    JEQ         WLOOP       332FFA      
+084F                    LDCH        RETADR,X    53AFEC      
+0852                    WD          =X'000001'  DF2000      
                         LTORG                               
-02E3                    *           =X'000007'  000007      
-02E6        EADR        RESB        700                     
-                        END         Assign                  
+0855                    *           =X'000001'  000001      
+0858                    +LDA        =X'000007'  03101090    
+085C        EADR        RESB        2100                    
+                        LTORG                               
+1090                    *           =X'000007'  000007      
+                        END         BASHRC                  

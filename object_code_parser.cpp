@@ -202,7 +202,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                                     AssemblyLine ltorg {};
                                     ltorg.type = AssemblyLine::Type::Decoration;
                                     ltorg.addressHex = "";
-                                    ltorg.addressValue = 0;
+                                    ltorg.addressValue = currentAddress;
                                     ltorg.label = "";
                                     ltorg.instruction = "LTORG";
                                     ltorg.value = "";
