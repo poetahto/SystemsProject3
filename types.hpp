@@ -54,16 +54,14 @@ struct InstructionInfo
     };
 };
 
-struct Symbol
-{
+struct Symbol {
     std::string name;
     std::string addressHex;
     std::string flags;
     int addressValue;
 };
 
-struct Literal
-{
+struct Constant {
     std::string name;
     std::string value;
     std::string lengthHex;
@@ -72,10 +70,20 @@ struct Literal
     int addressValue;
 };
 
-struct SymbolTableData
-{
+struct Literal {
+    std::string value;
+    std::string lengthHex;
+    std::string addressHex;
+    int lengthValue;
+    int addressValue;
+};
+
+struct SymbolTableData {
     u32 symbolCount;
     Symbol* symbols;
+
+    u32 constantCount;
+    Constant* constants;
 
     u32 literalCount;
     Literal* literals;
@@ -86,7 +94,6 @@ struct AssemblyLine
     enum class Type
     {
         Instruction,
-        Literal,
         Decoration,
 
     } type;
@@ -97,7 +104,7 @@ struct AssemblyLine
     std::string value;
     std::string objectCode;
 
-    size_t addressValue;
+    int addressValue;
     InstructionInfo instructionInfo;
 };
 

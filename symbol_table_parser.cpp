@@ -38,8 +38,9 @@ bool parseSymbolTableFile(const std::string& fileName, SymbolTableData& outData)
         outData.symbols = symbols->data();
     }
 
-    // Extract all the literals
+    // Extract all the constants and literals
     {
+        auto* constants = new std::vector<Constant>();
         auto* literals = new std::vector<Literal>();
 
         // Skip the header
@@ -50,19 +51,40 @@ bool parseSymbolTableFile(const std::string& fileName, SymbolTableData& outData)
         {
             bool failure {false};
 
-            Literal literal {};
-            StringParsingTools::tryGetArg(line, 0, &literal.name);
-            failure |= !StringParsingTools::tryGetArg(line, 1, &literal.value);
-            failure |= !StringParsingTools::tryGetArg(line, 2, &literal.lengthHex);
-            failure |= !StringParsingTools::tryGetArg(line, 3, &literal.addressHex);
-            failure |= !StringParsingTools::tryGetInt(literal.addressHex, literal.addressValue);
-            failure |= !StringParsingTools::tryGetInt(literal.lengthHex, literal.lengthValue);
+            std::string value {};
+            StringParsingTools::tryGetArg(line, 1, &value);
 
-            if (failure)
-                break;
+            if (value[0] == '=') { // we have a literal
+                Literal literal {};
+                literal.value = value;
+                StringParsingTools::tryGetArg(line, 2, &literal.lengthHex);
+                failure |= !StringParsingTools::tryGetArg(line, 3, &literal.addressHex);
+                failure |= !StringParsingTools::tryGetInt(literal.addressHex, literal.addressValue);
+                failure |= !StringParsingTools::tryGetInt(literal.lengthHex, literal.lengthValue);
 
-            literals->emplace_back(literal);
+                if (failure) {
+                    break;
+                }
+                literals->emplace_back(literal);
+            }
+            else { // we have a constant
+                Constant constant {};
+                constant.value = value;
+                StringParsingTools::tryGetArg(line, 0, &constant.name);
+                failure |= !StringParsingTools::tryGetArg(line, 2, &constant.lengthHex);
+                failure |= !StringParsingTools::tryGetArg(line, 3, &constant.addressHex);
+                failure |= !StringParsingTools::tryGetInt(constant.addressHex, constant.addressValue);
+                failure |= !StringParsingTools::tryGetInt(constant.lengthHex, constant.lengthValue);
+
+                if (failure) {
+                    break;
+                }
+                constants->emplace_back(constant);
+            }
         }
+
+        outData.constantCount = constants->size();
+        outData.constants = constants->data();
 
         outData.literalCount = literals->size();
         outData.literals = literals->data();

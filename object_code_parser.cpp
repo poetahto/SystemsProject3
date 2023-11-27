@@ -1,6 +1,7 @@
 #include <string>
 #include <fstream>
 #include <vector>
+#include <climits>
 
 #include "logger.hpp"
 #include "types.hpp"
@@ -24,7 +25,10 @@ static void setValueRegisterMultiple(AssemblyLine& line);
 
 static bool tryGetSymbolFromAddress(const int targetAddress, const SymbolTableData& symbolData, Symbol** outSymbol) {
     for (int i = 0; i < symbolData.symbolCount; ++i) {
-        if (symbolData.symbols[i].addressValue == targetAddress) {
+        Symbol& symbol = symbolData.symbols[i];
+
+        // For some reason, it seems the "FIRST" label is never replaced - hence this weird edge case.
+        if (symbol.addressValue == targetAddress && symbol.name != "FIRST") {
             *outSymbol = &symbolData.symbols[i];
             return true;
         }
@@ -32,8 +36,71 @@ static bool tryGetSymbolFromAddress(const int targetAddress, const SymbolTableDa
     return false;
 }
 
-bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& symbolData, ObjectCodeData& outData)
-{
+static bool tryGetConstantFromAddress(const int targetAddress, const SymbolTableData& symbolData, Constant** outConstant) {
+    for (int i = 0; i < symbolData.constantCount; ++i) {
+        Constant& constant = symbolData.constants[i];
+
+        if (constant.addressValue == targetAddress) {
+            *outConstant = &symbolData.constants[i];
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool tryGetLiteralFromAddress(const int targetAddress, const SymbolTableData& symbolData, Literal** outLiteral) {
+    for (int i = 0; i < symbolData.literalCount; ++i) {
+        Literal& literal = symbolData.literals[i];
+
+        if (literal.addressValue == targetAddress) {
+            *outLiteral = &symbolData.literals[i];
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string convertTargetAddressToValue(const int targetAddress, const SymbolTableData& symbolData) {
+    Symbol* symbol;
+    Constant* constant;
+    Literal* literal;
+
+    if (tryGetSymbolFromAddress(targetAddress, symbolData, &symbol)) {
+        return symbol->name;
+    }
+    else if (tryGetConstantFromAddress(targetAddress, symbolData, &constant)) {
+        return constant->name;
+    }
+    else if (tryGetLiteralFromAddress(targetAddress, symbolData, &literal)) {
+        return literal->value;
+    }
+    else {
+        return StringParsingTools::getHex(targetAddress, false);
+    }
+}
+
+static bool tryAddSkippedSymbols(const int minAddress, const int maxAddress, const SymbolTableData& symbolData, std::vector<AssemblyLine>* lines) {
+    bool success {false};
+
+    for (int i = 0; i < symbolData.symbolCount; ++i) {
+        Symbol& symbol = symbolData.symbols[i];
+        if (symbol.addressValue >= minAddress && symbol.addressValue < maxAddress) {
+            AssemblyLine line {};
+            line.addressValue = symbol.addressValue;
+            line.addressHex = StringParsingTools::getHex(symbol.addressValue);
+            line.label = symbol.name;
+            line.instruction = "RESB";
+            line.objectCode = "";
+            line.type = AssemblyLine::Type::Decoration;
+            lines->emplace_back(line);
+            success = true;
+        }
+    }
+
+    return success;
+}
+
+bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& symbolData, ObjectCodeData& outData) {
     auto* lines = new std::vector<AssemblyLine>;
 
     // Header information
@@ -45,7 +112,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
     {
         std::string line {};
         std::ifstream objectCodeStream {fileName};
-        size_t currentAddress {};
+        int currentAddress {};
 
         while (std::getline(objectCodeStream, line))
         {
@@ -73,6 +140,9 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                 int startingAddressValue;
                 StringParsingTools::tryGetInt(startingAddressHex, startingAddressValue);
 
+                // Check to see if we skipped any symbols
+                tryAddSkippedSymbols(currentAddress, startingAddressValue, symbolData, lines);
+
                 currentAddress = startingAddressValue;
                 Logger::log_info("start: %s (%i), lengthHex: %s (%i)", startingAddressHex.c_str(), startingAddressValue, lengthHex.c_str(), lengthValue);
 
@@ -96,31 +166,44 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                             result.label = symbolData.symbols[i].name;
                     }
 
-                    // check to see if current addressHex is a literal
-                    bool foundLiteral {false};
+                    bool isInstruction {true};
 
-                    for (int i {0}; i < symbolData.literalCount; ++i)
+                    // Check for Literals and Constants
                     {
-                        Literal cur = symbolData.literals[i];
+                        for (int i {0}; i < symbolData.constantCount; ++i) {
+                            Constant cur = symbolData.constants[i];
 
-                        if (currentAddress == cur.addressValue)
-                        {
-                            // Luckily, we can immediately decode the entire literal on the spot, no need for a second pass.
-                            result.type = AssemblyLine::Type::Literal;
-                            result.addressHex = StringParsingTools::getHex(currentAddress);
-                            result.addressValue = currentAddress;
-                            result.label = cur.name;
-                            result.instruction = "BYTE"; // todo: in reality, we shouldn't assume everything is a byte, but this is a lab
-                            result.value = cur.value;
-                            result.objectCode = StringParsingTools::getBetween(cur.value, '\'');
-                            index += cur.lengthValue;
-                            foundLiteral = true;
+                            if (currentAddress == cur.addressValue) {
+                                result.type = AssemblyLine::Type::Decoration;
+                                result.addressHex = StringParsingTools::getHex(currentAddress);
+                                result.addressValue = currentAddress;
+                                result.label = cur.name;
+                                result.instruction = "BYTE"; // todo: in reality, we shouldn't assume everything is a byte, but this is a lab
+                                result.value = cur.value;
+                                result.objectCode = StringParsingTools::getBetween(cur.value, '\'');
+                                index += cur.lengthValue;
+                                isInstruction = false;
+                            }
+                        }
+
+                        for (int i {0}; i < symbolData.literalCount; ++i) {
+                            Literal cur = symbolData.literals[i];
+
+                            if (currentAddress == cur.addressValue) {
+                                result.type = AssemblyLine::Type::Decoration;
+                                result.addressHex = StringParsingTools::getHex(currentAddress);
+                                result.addressValue = currentAddress;
+                                result.label = "";
+                                result.instruction = "*";
+                                result.value = cur.value;
+                                result.objectCode = StringParsingTools::getBetween(cur.value, '\'');
+                                index += cur.lengthValue;
+                                isInstruction = false;
+                            }
                         }
                     }
 
-                    // Only parse an instruction if we didn't have a literal
-                    if (!foundLiteral)
-                    {
+                    if (isInstruction) {
                         // Now we can assume we found an instruction to parse.
                         std::string opCodeHex = line.substr(index, 2);
                         index += 2;
@@ -190,19 +273,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
         }
 
         // Now check if any symbols are defined after, and add them
-        for (int i = 0; i < symbolData.symbolCount; ++i) {
-            Symbol& symbol = symbolData.symbols[i];
-            if (symbol.addressValue >= currentAddress) {
-                AssemblyLine line {};
-                line.addressValue = symbol.addressValue;
-                line.addressHex = StringParsingTools::getHex(symbol.addressValue);
-                line.label = symbol.name;
-                line.instruction = "RESB";
-                line.objectCode = "";
-                line.type = AssemblyLine::Type::Decoration;
-                lines->emplace_back(line);
-            }
-        }
+        tryAddSkippedSymbols(currentAddress, INT_MAX, symbolData, lines);
     }
 
     // Do a second pass where we populate all the values for the instructions, and any extra decorations.
@@ -220,7 +291,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
         header.type = AssemblyLine::Type::Decoration;
         lines->emplace(lines->begin(), header);
 
-        size_t nextAddress {};
+        int nextAddress {};
         int currentBase {};
         int currentX {};
 
@@ -232,6 +303,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                 nextAddress = (*lines)[i + 1].addressValue;
             }
             else {
+                // We have no more instructions left: so the final address must be the end of the program
                 nextAddress = startingAddressValue + headerLengthBytes;
             }
 
@@ -307,16 +379,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                     }
 
                     // Try to convert our target address into a label, and computer the line value
-                    {
-                        Symbol* symbol;
-
-                        if (targetAddress != line.addressValue && tryGetSymbolFromAddress(targetAddress, symbolData, &symbol)) {
-                            line.value = symbol->name;
-                        }
-                        else {
-                            line.value = StringParsingTools::getHex(targetAddress, false);
-                        }
-                    }
+                    line.value = convertTargetAddressToValue(targetAddress, symbolData);
 
                     // Apply decorations
 
@@ -337,14 +400,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
             }
             else if (line.type == AssemblyLine::Type::Decoration) {
                 if (line.instruction == "BASE") {
-                    Symbol* symbol;
-
-                    if (tryGetSymbolFromAddress(currentBase, symbolData, &symbol)) {
-                        line.value = symbol->name;
-                    }
-                    else {
-                        line.value = StringParsingTools::getHex(currentBase);
-                    }
+                    line.value = convertTargetAddressToValue(currentBase, symbolData);
                 }
                 if (line.instruction == "RESB") {
                     line.value = std::to_string(nextAddress - line.addressValue);
