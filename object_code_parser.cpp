@@ -65,6 +65,8 @@ std::string convertTargetAddressToValue(const int targetAddress, const SymbolTab
     Constant* constant;
     Literal* literal;
 
+    // check if we can turn the addresses into symbols / labels
+
     if (tryGetSymbolFromAddress(targetAddress, symbolData, &symbol)) {
         return symbol->name;
     }
@@ -106,6 +108,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
     // Header information
     std::string headerProgramName {};
     std::string headerStartingAddressHex {};
+    int headerStartingAddressValue {};
     int headerLengthBytes {};
 
     // Do the first pass to determine header info, addressHex, object code, label, and instruction for each line.
@@ -113,6 +116,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
         std::string line {};
         std::ifstream objectCodeStream {fileName};
         int currentAddress {};
+        bool prevWasLiteral {false}; // was the previous line a literal definition? used to determine LTORG
 
         while (std::getline(objectCodeStream, line))
         {
@@ -120,7 +124,9 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
             {
                 Logger::log_info("parsing header");
                 headerProgramName = line.substr(1, 6);
+
                 headerStartingAddressHex = line.substr(7, 6);
+                StringParsingTools::tryGetInt(headerStartingAddressHex, headerStartingAddressValue);
 
                 std::string lengthBytesHex {line.substr(13, 6)};
                 StringParsingTools::tryGetInt(lengthBytesHex, headerLengthBytes);
@@ -186,10 +192,23 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                             }
                         }
 
+                        bool foundLiteral {false};
+
                         for (int i {0}; i < symbolData.literalCount; ++i) {
                             Literal cur = symbolData.literals[i];
 
                             if (currentAddress == cur.addressValue) {
+                                if (!prevWasLiteral) { // this is the first literal in a sequence: insert ltorg
+                                    AssemblyLine ltorg {};
+                                    ltorg.type = AssemblyLine::Type::Decoration;
+                                    ltorg.addressHex = "";
+                                    ltorg.addressValue = 0;
+                                    ltorg.label = "";
+                                    ltorg.instruction = "LTORG";
+                                    ltorg.value = "";
+                                    ltorg.objectCode = "";
+                                    lines->emplace_back(ltorg);
+                                }
                                 result.type = AssemblyLine::Type::Decoration;
                                 result.addressHex = StringParsingTools::getHex(currentAddress);
                                 result.addressValue = currentAddress;
@@ -198,8 +217,16 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                                 result.value = cur.value;
                                 result.objectCode = StringParsingTools::getBetween(cur.value, '\'');
                                 index += cur.lengthValue;
-                                isInstruction = false;
+                                foundLiteral = true;
                             }
+                        }
+
+                        if (foundLiteral) {
+                            isInstruction = false;
+                            prevWasLiteral = true;
+                        }
+                        else {
+                            prevWasLiteral = false;
                         }
                     }
 
@@ -278,15 +305,12 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
 
     // Do a second pass where we populate all the values for the instructions, and any extra decorations.
     {
-        int startingAddressValue;
-        StringParsingTools::tryGetInt(headerStartingAddressHex, startingAddressValue);
-
         AssemblyLine header {};
         header.addressHex = "0000";
         header.addressValue = 0;
         header.label = headerProgramName;
         header.instruction = "START";
-        header.value = std::to_string(startingAddressValue);
+        header.value = std::to_string(headerStartingAddressValue);
         header.objectCode = "";
         header.type = AssemblyLine::Type::Decoration;
         lines->emplace(lines->begin(), header);
@@ -304,7 +328,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
             }
             else {
                 // We have no more instructions left: so the final address must be the end of the program
-                nextAddress = startingAddressValue + headerLengthBytes;
+                nextAddress = headerStartingAddressValue + headerLengthBytes;
             }
 
             if (line.type == AssemblyLine::Type::Instruction)
