@@ -116,7 +116,6 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
         std::string line {};
         std::ifstream objectCodeStream {fileName};
         int currentAddress {};
-        bool prevWasLiteral {false}; // was the previous line a literal definition? used to determine LTORG
 
         while (std::getline(objectCodeStream, line))
         {
@@ -192,23 +191,10 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                             }
                         }
 
-                        bool foundLiteral {false};
-
                         for (int i {0}; i < symbolData.literalCount; ++i) {
                             Literal cur = symbolData.literals[i];
 
                             if (currentAddress == cur.addressValue) {
-                                if (!prevWasLiteral) { // this is the first literal in a sequence: insert ltorg
-                                    AssemblyLine ltorg {};
-                                    ltorg.type = AssemblyLine::Type::Decoration;
-                                    ltorg.addressHex = "";
-                                    ltorg.addressValue = currentAddress;
-                                    ltorg.label = "";
-                                    ltorg.instruction = "LTORG";
-                                    ltorg.value = "";
-                                    ltorg.objectCode = "";
-                                    lines->emplace_back(ltorg);
-                                }
                                 result.type = AssemblyLine::Type::Decoration;
                                 result.addressHex = StringParsingTools::getHex(currentAddress);
                                 result.addressValue = currentAddress;
@@ -217,16 +203,8 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                                 result.value = cur.value;
                                 result.objectCode = StringParsingTools::getBetween(cur.value, '\'');
                                 index += cur.lengthValue;
-                                foundLiteral = true;
+                                isInstruction = false;
                             }
-                        }
-
-                        if (foundLiteral) {
-                            isInstruction = false;
-                            prevWasLiteral = true;
-                        }
-                        else {
-                            prevWasLiteral = false;
                         }
                     }
 
@@ -301,6 +279,33 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
 
         // Now check if any symbols are defined after, and add them
         tryAddSkippedSymbols(currentAddress, INT_MAX, symbolData, lines);
+
+        // Do a reverse sweep over the lines, and insert LTORG statements before the literals
+        bool skippedEnd {false};
+        bool prevWasLiteral {false};
+
+        for (int i = static_cast<int>(lines->size() - 1); i >= 0; --i) {
+            AssemblyLine& cur = (*lines)[i];
+
+            if (cur.instruction == "*") {
+                prevWasLiteral = true;
+            }
+            else {
+                if (prevWasLiteral && skippedEnd) {
+                    AssemblyLine ltorg {};
+                    ltorg.type = AssemblyLine::Type::Decoration;
+                    ltorg.addressHex = "";
+                    ltorg.addressValue = (*lines)[i + 1].addressValue;
+                    ltorg.label = "";
+                    ltorg.instruction = "LTORG";
+                    ltorg.value = "";
+                    ltorg.objectCode = "";
+                    lines->insert(lines->begin() + i + 1, ltorg);
+                }
+                skippedEnd = true;
+                prevWasLiteral = false;
+            }
+        }
     }
 
     // Do a second pass where we populate all the values for the instructions, and any extra decorations.
@@ -315,7 +320,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
         header.type = AssemblyLine::Type::Decoration;
         lines->emplace(lines->begin(), header);
 
-        int nextAddress {};
+        int nextAddress;
         int currentBase {};
         int currentX {};
 
@@ -355,7 +360,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                     // Format 3/4 is more consistent than 2, but a pain to calculate due to addressing modes.
 
                     InstructionInfo::FormatThreeOrFourInfo& info = line.instructionInfo.formatThreeOrFourInfo;
-                    int targetAddress {};
+                    int targetAddress;
 
                     if (info.b) { // Check if base-relative
                         Logger::log_info("base rel: %s", line.instruction.c_str());

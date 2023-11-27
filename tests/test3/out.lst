@@ -18,4 +18,3 @@
 085C EADR    RESB    2100                      
 1090         *       =X'000007'    000007      
              END     BASHRC                    
-
