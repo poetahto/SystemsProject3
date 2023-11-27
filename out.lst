@@ -1,11 +1,18 @@
-0000        SUM         START       0                       
-0000        FIRST       LDX         #0          050000      
-0003                    LDA         COUNT       032014      
-0006                    +LDB        #TABLE2     6910178D    
-                        BASE        TABLE2                  
-000A        LOOP        ADD         TABLE,X     1BA010      
-000D                    ADD         TABLE2,X    1BC000      
-0010                    TIX         COUNT       2F2007      
-0013                    JLT         LOOP        3B2FF4      
-0016                    +STA        TOTAL       0F102EFD    
-                        END         SUM                     
+0000        Assign      START       0                       
+0000        FIRST       +LDB        #RETADR     691002C6    
+                        BASE        RETADR                  
+0004                    STL         RETADR      1722BF      
+0007                    LDA         @583        0222BC      
+02C7                    CLEAR       A           B400        
+02C9        VDEV        BYTE        X'F1'       F1          
+02CA                    LDX         #FIRST      050000      
+02CD                    LDA         #5          010005      
+02D0        WDEV        BYTE        X'000001'   000001      
+02D3        WLOOP       TD          2D0         E32FFA      
+02D6                    JEQ         WLOOP       332FFA      
+02D9                    LDCH        RETADR,X    53AFEA      
+02DC                    WD          2C9         DF2FEA      
+02DF                    +LDA        2E3         031002E3    
+02E3                    BYTE        =X'000007'  000007      
+02E6        EADR        RESB        700                     
+                        END         Assign                  

@@ -188,6 +188,21 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                 }
             }
         }
+
+        // Now check if any symbols are defined after, and add them
+        for (int i = 0; i < symbolData.symbolCount; ++i) {
+            Symbol& symbol = symbolData.symbols[i];
+            if (symbol.addressValue >= currentAddress) {
+                AssemblyLine line {};
+                line.addressValue = symbol.addressValue;
+                line.addressHex = StringParsingTools::getHex(symbol.addressValue);
+                line.label = symbol.name;
+                line.instruction = "RESB";
+                line.objectCode = "";
+                line.type = AssemblyLine::Type::Decoration;
+                lines->emplace_back(line);
+            }
+        }
     }
 
     // Do a second pass where we populate all the values for the instructions, and any extra decorations.
@@ -197,6 +212,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
 
         AssemblyLine header {};
         header.addressHex = "0000";
+        header.addressValue = 0;
         header.label = headerProgramName;
         header.instruction = "START";
         header.value = std::to_string(startingAddressValue);
@@ -212,8 +228,12 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
         {
             AssemblyLine& line = (*lines)[i];
 
-            if (i < lines->size() - 1)
+            if (i < lines->size() - 1) {
                 nextAddress = (*lines)[i + 1].addressValue;
+            }
+            else {
+                nextAddress = startingAddressValue + headerLengthBytes;
+            }
 
             if (line.type == AssemblyLine::Type::Instruction)
             {
@@ -315,17 +335,22 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                     line.instruction.insert(0, "+");
                 }
             }
+            else if (line.type == AssemblyLine::Type::Decoration) {
+                if (line.instruction == "BASE") {
+                    Symbol* symbol;
 
-            else if (line.instruction == "BASE") {
-                Symbol* symbol;
-
-                if (tryGetSymbolFromAddress(currentBase, symbolData, &symbol)) {
-                    line.value = symbol->name;
+                    if (tryGetSymbolFromAddress(currentBase, symbolData, &symbol)) {
+                        line.value = symbol->name;
+                    }
+                    else {
+                        line.value = StringParsingTools::getHex(currentBase);
+                    }
                 }
-                else {
-                    line.value = StringParsingTools::getHex(currentBase);
+                if (line.instruction == "RESB") {
+                    line.value = std::to_string(nextAddress - line.addressValue);
                 }
             }
+
         }
 
         AssemblyLine footer {};

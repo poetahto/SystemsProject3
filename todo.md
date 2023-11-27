@@ -7,8 +7,6 @@ Well, this came out of nowhere.
 - [ ] insert literal definitions and LTORGs
 
 ## Test Progress
-- [ ] pass test 1
-  - needs the TA address labels
-  - needs the literal definitions (no ltorg yet)
+- [x] pass test 1
 - [ ] pass test 2
 - [ ] pass test 3
