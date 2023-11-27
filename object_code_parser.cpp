@@ -241,7 +241,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                         if (info.x)
                             displacementValue += currentX;
 
-                        line.value = StringParsingTools::getHex(displacementValue + currentBase);
+                        line.value = StringParsingTools::getHex(displacementValue + currentBase, false);
                     }
                     else if (info.p) // Check if PC-relative
                     {
@@ -254,7 +254,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                         if (info.x)
                             displacementValue += currentX;
 
-                        line.value = StringParsingTools::getHex(displacementValue + nextAddress);
+                        line.value = StringParsingTools::getHex(displacementValue + nextAddress, false);
                     }
                     else // Then we must be direct
                     {
@@ -267,7 +267,7 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                         if (info.x)
                             addressValue += currentX;
 
-                        line.value = StringParsingTools::getHex(addressValue);
+                        line.value = StringParsingTools::getHex(addressValue, false);
                     }
 
                     // These instructions do special things and have lasting effects on preceding instructions

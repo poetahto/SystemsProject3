@@ -18,10 +18,15 @@ namespace StringParsingTools
     bool tryGetInt(const std::string& hex, int& outResult);
 
     template<typename T>
-    std::string getHex(T value)
+    std::string getHex(T value, bool padZeros = true)
     {
         std::ostringstream ss {};
-        ss << std::hex << std::setfill('0') << std::setw(4) << std::uppercase << value;
+        if (padZeros) {
+            ss << std::hex << std::setfill('0') << std::setw(4) << std::uppercase << value;
+        }
+        else {
+            ss << std::hex << std::uppercase << value;
+        }
         return ss.str();
     }
 }
