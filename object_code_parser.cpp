@@ -22,6 +22,16 @@ static void setValueRegisterConstant(AssemblyLine& line);
 // Example: ADDR r1, r2
 static void setValueRegisterMultiple(AssemblyLine& line);
 
+static bool tryGetSymbolFromAddress(const int targetAddress, const SymbolTableData& symbolData, Symbol** outSymbol) {
+    for (int i = 0; i < symbolData.symbolCount; ++i) {
+        if (symbolData.symbols[i].addressValue == targetAddress) {
+            *outSymbol = &symbolData.symbols[i];
+            return true;
+        }
+    }
+    return false;
+}
+
 bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& symbolData, ObjectCodeData& outData)
 {
     auto* lines = new std::vector<AssemblyLine>;
@@ -225,14 +235,13 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                     if (line.instruction == "SHIFTR") setValueRegisterConstant(line);
                     if (line.instruction == "SVC") setValueConstant(line);
                 }
-                if (line.instructionInfo.format == InstructionInfo::Format::ThreeOrFour)
-                {
+                if (line.instructionInfo.format == InstructionInfo::Format::ThreeOrFour) {
                     // Format 3/4 is more consistent than 2, but a pain to calculate due to addressing modes.
 
                     InstructionInfo::FormatThreeOrFourInfo& info = line.instructionInfo.formatThreeOrFourInfo;
+                    int targetAddress {};
 
-                    if (info.b) // Check if base-relative
-                    {
+                    if (info.b) { // Check if base-relative
                         Logger::log_info("base rel: %s", line.instruction.c_str());
                         std::string displacementHex {line.objectCode.substr(3, 3)};
                         int displacementValue {};
@@ -241,10 +250,9 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                         if (info.x)
                             displacementValue += currentX;
 
-                        line.value = StringParsingTools::getHex(displacementValue + currentBase, false);
+                        targetAddress = displacementValue + currentBase;
                     }
-                    else if (info.p) // Check if PC-relative
-                    {
+                    else if (info.p) { // Check if PC-relative
                         Logger::log_info("pc rel: %s", line.instruction.c_str());
                         std::string displacementHex {line.objectCode.substr(3, 3)};
                         int displacementValue {};
@@ -254,10 +262,9 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                         if (info.x)
                             displacementValue += currentX;
 
-                        line.value = StringParsingTools::getHex(displacementValue + nextAddress, false);
+                        targetAddress = displacementValue + nextAddress;
                     }
-                    else // Then we must be direct
-                    {
+                    else { // Then we must be direct
                         Logger::log_info("direct: %s", line.instruction.c_str());
                         int length = info.e ? 5 : 3;
                         std::string addressHex {line.objectCode.substr(3, length)};
@@ -267,32 +274,58 @@ bool parseObjectCodeFile(const std::string& fileName, const SymbolTableData& sym
                         if (info.x)
                             addressValue += currentX;
 
-                        line.value = StringParsingTools::getHex(addressValue, false);
+                        targetAddress = addressValue;
                     }
 
                     // These instructions do special things and have lasting effects on preceding instructions
 
-                    if (line.instruction == "LDB")
-                        StringParsingTools::tryGetInt(line.value, currentBase);
+                    if (line.instruction == "LDB") {
+                        currentBase = targetAddress;
+                    }
+                    if (line.instruction == "LDX") {
+                        currentX = targetAddress;
+                    }
 
-                    if (line.instruction == "LDX")
-                        StringParsingTools::tryGetInt(line.value, currentX);
+                    // Try to convert our target address into a label, and computer the line value
+                    {
+                        Symbol* symbol;
+
+                        if (targetAddress != line.addressValue && tryGetSymbolFromAddress(targetAddress, symbolData, &symbol)) {
+                            line.value = symbol->name;
+                        }
+                        else {
+                            line.value = StringParsingTools::getHex(targetAddress, false);
+                        }
+                    }
 
                     // Apply decorations
 
-                    if (info.i && !info.n) // Immediate
+                    if (info.i && !info.n) { // Immediate
                         line.value.insert(0, "#");
-
-                    if (!info.i && info.n) // Indirect
+                    }
+                    if (!info.i && info.n) { // Indirect
                         line.value.insert(0, "@");
+                    }
+                    if (info.x) {
+                        line.value.append(",X");
+                    }
                 }
 
-                if (line.instructionInfo.formatThreeOrFourInfo.e)
+                if (line.instructionInfo.formatThreeOrFourInfo.e) {
                     line.instruction.insert(0, "+");
+                }
             }
 
-            else if (line.instruction == "BASE")
-                line.value = StringParsingTools::getHex(currentBase);
+            else if (line.instruction == "BASE") {
+                Symbol* symbol;
+
+                if (tryGetSymbolFromAddress(currentBase, symbolData, &symbol)) {
+                    line.value = symbol->name;
+                }
+                else {
+                    line.value = StringParsingTools::getHex(currentBase);
+                }
+            }
         }
 
         AssemblyLine footer {};
